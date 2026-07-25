@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Google Vids 台本自動注入くん (ファイル読込・全自動版)</title>
+  <title>Google Vids 台本自動注入くん (マルチ対応・全自動版)</title>
   <style>
     body {
       width: 350px;
@@ -27,7 +27,7 @@
       display: block;
       margin-bottom: 4px;
     }
-    select, textarea, input[type="file"] {
+    select, textarea, input[type="file"], input[type="text"] {
       width: 100%;
       background: #1e2438;
       border: 1px solid rgba(255, 255, 255, 0.15);
@@ -85,12 +85,25 @@
       text-align: center;
       min-height: 16px;
     }
-    .file-input-container {
+    .input-container-box {
       background: #151a2e;
       border: 1px dashed rgba(255, 255, 255, 0.2);
       padding: 10px;
       border-radius: 8px;
       margin-bottom: 12px;
+    }
+    .github-input-group {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .github-input-group input {
+      margin-bottom: 0;
+      flex: 2;
+    }
+    .github-input-group select {
+      margin-bottom: 0;
+      flex: 1;
     }
   </style>
 </head>
@@ -99,27 +112,41 @@
 
   <label for="script-preset">📜 取り込みたい台本を選択:</label>
   <select id="script-preset">
-    <option value="local">📂 PC上の台本ファイルを選択して読み込む</option>
+    <option value="local">📂 PC上の台本ファイルを選択して読み込む (推奨)</option>
+    <option value="github">🌐 GitHubから台本を読み込んで全自動流し込み</option>
     <option value="custom">✍️ テキストを直接コピペして全自動流し込み</option>
     <option value="ep4">🎬 デモ台本 ep4: パソコン登場時と同じ現象 (1シーンずつ流し込み)</option>
     <option value="ep3">🎬 デモ台本 ep3: AI導入と生産性のJカーブ (1シーンずつ流し込み)</option>
   </select>
 
-  <!-- 1. ローカルファイル選択エリア (初期表示) -->
-  <div id="local-file-controls-area" class="file-input-container">
+  <!-- 1. ローカルファイル選択エリア -->
+  <div id="local-file-controls-area" class="input-container-box">
     <label for="local-file-input">📄 台本ファイル (.txt / .md) を選択:</label>
     <input type="file" id="local-file-input" accept=".txt,.md">
     <div id="file-info-msg" style="font-size: 11px; color: #a4b0be; margin-top: 4px;"></div>
   </div>
 
-  <!-- 2. カスタム台本コピペ / 読み込み内容表示エリア -->
+  <!-- 2. GitHub連携エリア (初期は非表示) -->
+  <div id="github-controls-area" class="input-container-box" style="display: none;">
+    <label for="github-filename">📂 GitHub上の台本ファイル名（docs/ 内）:</label>
+    <div class="github-input-group">
+      <input type="text" id="github-filename" placeholder="例: showa_ai_ep4_script" value="台本_昭和AI_ep4_パソコン登場時と同じ現象">
+      <select id="github-file-ext">
+        <option value=".md">.md</option>
+        <option value=".txt">.txt</option>
+      </select>
+    </div>
+    <button class="inject-main" id="github-inject-btn" style="background: linear-gradient(135deg, #1e90ff 0%, #a020f0 100%); box-shadow: 0 4px 12px rgba(30, 144, 255, 0.3); margin-bottom: 0;">⚡ GitHubから取得して全自動流し込み！</button>
+  </div>
+
+  <!-- 3. カスタム台本コピペ / 読み込み内容表示エリア -->
   <div id="custom-controls-area">
     <label for="custom-script-text">📝 読み込まれた台本テキスト（編集も可能）:</label>
     <textarea id="custom-script-text" style="height: 160px;" placeholder="ファイルを読み込むか、ここに台本をコピペしてください。&#10;【シーン1】冒頭のタイトル&#10;ここにナレーションの本文を記述します。[pause 1.5s]"></textarea>
     <button class="inject-main" id="auto-inject-btn" style="background: linear-gradient(135deg, #2ed573 0%, #1e90ff 100%); box-shadow: 0 4px 12px rgba(46, 213, 115, 0.3);">⚡ Google Vidsへ全自動流し込み！</button>
   </div>
 
-  <!-- 3. プリセット手動エリア (初期は非表示) -->
+  <!-- 4. プリセット手動エリア (初期は非表示) -->
   <div id="preset-controls-area" style="display: none;">
     <label for="scene-select">🎬 シーン（場面）を選択:</label>
     <select id="scene-select">

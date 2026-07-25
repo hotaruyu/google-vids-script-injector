@@ -1,4 +1,4 @@
-// Google Vids Script Injector Popup Logic (V3.8 - ローカルファイル読込・全自動流し込み対応版)
+// Google Vids Script Injector Popup Logic (V3.9 - マルチ対応・全自動流し込み対応版)
 
 const sceneData = {
   ep4: [
@@ -41,8 +41,6 @@ const sceneData = {
 // markdownやtxtの中の「【シーン1】タイトル\n本文」という形式をパースして配列に変換する
 function parseCustomScript(text) {
   const scenes = [];
-  
-  // 区切り文字（【シーンX】または シーンX）を特定する
   const regex = /(?:[#\s]*【シーン\s*(\d+)】|[#\s]*シーン\s*(\d+))([^\n]*)/g;
   
   // 区切り文字で本文を分割
@@ -67,11 +65,24 @@ function parseCustomScript(text) {
   return scenes;
 }
 
+// GitHubのRawコンテンツをフェッチする
+async function fetchScriptFromGitHub(filename, ext) {
+  const url = `https://raw.githubusercontent.com/hotaruyu/hermes-agent/main/docs/${encodeURIComponent(filename)}${ext}`;
+  console.log("GitHubから台本をダウンロード中:", url);
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`ファイルのダウンロードに失敗しました (Status: ${response.status})。\nリポジトリにファイルが存在するか、公開されているかご確認ください。`);
+  }
+  return await response.text();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const presetSelect = document.getElementById('script-preset');
   
   // 各モード別コンテナ
   const localFileArea = document.getElementById('local-file-controls-area');
+  const githubArea = document.getElementById('github-controls-area');
   const customArea = document.getElementById('custom-controls-area');
   const presetArea = document.getElementById('preset-controls-area');
   
@@ -89,6 +100,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // ローカルファイル用
   const localFileInput = document.getElementById('local-file-input');
   const fileInfoMsg = document.getElementById('file-info-msg');
+
+  // GitHub用
+  const githubFilename = document.getElementById('github-filename');
+  const githubFileExt = document.getElementById('github-file-ext');
+  const githubInjectBtn = document.getElementById('github-inject-btn');
 
   // 1. シーンプリセットのロード
   function loadScenes(epKey) {
@@ -117,14 +133,22 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (val === 'local') {
       localFileArea.style.display = 'block';
+      githubArea.style.display = 'none';
       customArea.style.display = 'block';
+      presetArea.style.display = 'none';
+    } else if (val === 'github') {
+      localFileArea.style.display = 'none';
+      githubArea.style.display = 'block';
+      customArea.style.display = 'none';
       presetArea.style.display = 'none';
     } else if (val === 'custom') {
       localFileArea.style.display = 'none';
+      githubArea.style.display = 'none';
       customArea.style.display = 'block';
       presetArea.style.display = 'none';
     } else {
       localFileArea.style.display = 'none';
+      githubArea.style.display = 'none';
       customArea.style.display = 'none';
       presetArea.style.display = 'block';
       loadScenes(val);
@@ -164,7 +188,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      // ファイルの中身をテキストエリアに展開
       customScriptText.value = event.target.result;
       statusMsg.textContent = `✅ ファイル「${file.name}」を正常に読み込みました。`;
       statusMsg.style.color = '#2ed573';
@@ -208,7 +231,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // 5. テキストエリア（読込内容）の全自動流し込み
+  // 5. テキストエリア（読込内容・直接入力）の全自動流し込み
   autoInjectBtn.addEventListener('click', async () => {
     const rawText = customScriptText.value.trim();
     if (!rawText) {
@@ -245,5 +268,57 @@ document.addEventListener('DOMContentLoaded', () => {
         statusMsg.style.color = '#ff4757';
       }
     });
+  });
+
+  // 6. GitHub連携での全自動流し込み
+  githubInjectBtn.addEventListener('click', async () => {
+    const filename = githubFilename.value.trim();
+    const ext = githubFileExt.value;
+
+    if (!filename) {
+      statusMsg.textContent = '❌ ファイル名を入力してください。';
+      statusMsg.style.color = '#ff4757';
+      return;
+    }
+
+    statusMsg.textContent = '⏳ GitHubから台本をダウンロード中...';
+    statusMsg.style.color = '#ffa502';
+
+    try {
+      const rawText = await fetchScriptFromGitHub(filename, ext);
+      
+      const scenes = parseCustomScript(rawText);
+      if (scenes.length === 0) {
+        statusMsg.textContent = '❌ 取得した台本に有効な【シーン番号】の区切りが見つかりません。';
+        statusMsg.style.color = '#ff4757';
+        return;
+      }
+
+      statusMsg.textContent = `⏳ ダウンロード成功！全自動流し込みを開始します... (${scenes.length} シーン)`;
+      statusMsg.style.color = '#ffa502';
+
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab) {
+        statusMsg.textContent = '❌ 有効なタブが見つかりません。';
+        return;
+      }
+
+      chrome.tabs.sendMessage(tab.id, { action: "auto_inject", scenes: scenes }, (response) => {
+        if (chrome.runtime.lastError) {
+          statusMsg.textContent = `❌ エラー: ${chrome.runtime.lastError.message}`;
+          statusMsg.style.color = '#ff4757';
+        } else if (response && response.success) {
+          statusMsg.textContent = `🎉 GitHubから全自動流し込みが正常に完了しました！`;
+          statusMsg.style.color = '#2ed573';
+        } else {
+          statusMsg.textContent = `❌ エラーで停止しました。Vids画面を確認してください。`;
+          statusMsg.style.color = '#ff4757';
+        }
+      });
+
+    } catch (err) {
+      statusMsg.textContent = `❌ ${err.message}`;
+      statusMsg.style.color = '#ff4757';
+    }
   });
 });
