@@ -1,13 +1,13 @@
-// Content script injected into Google Vids pages (V3.6 - 全自動流し込み対応版)
+// Content script injected into Google Vids pages (V3.10 - 切り替えリトライ＆デバッグ機能強化版)
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "inject_script") {
-    // 既存の単一シーン流し込み
     const scriptText = request.text;
-    const success = injectTextToGoogleVids(scriptText);
-    sendResponse({ success: success });
+    injectTextToGoogleVids(scriptText).then(success => {
+      sendResponse({ success: success });
+    });
+    return true;
   } else if (request.action === "auto_inject") {
-    // 新規：全自動シーン追加＆流し込み
     const scenes = request.scenes;
     runAutoInjection(scenes).then(success => {
       sendResponse({ success: success });
@@ -15,7 +15,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       console.error("全自動入力中にエラー発生:", err);
       sendResponse({ success: false, error: err.message });
     });
-    return true; // 非同期レスポンスを返すために必要
+    return true; 
   }
   return true;
 });
@@ -38,7 +38,6 @@ function triggerPaste(targetElement, text) {
 
 // 正しいナレーション用 iframe を特定する
 function getNarrationIframe() {
-  // 1. サイドバー領域 (.appsFlixScriptsSidebarWorkspace) の中から探す
   const sidebar = document.querySelector('.appsFlixScriptsSidebarWorkspacePlaceholder')?.parentElement?.parentElement || 
                   document.querySelector('.appsFlixScriptsSidebarWorkspace')?.parentElement ||
                   document.querySelector('[role="complementary"]');
@@ -48,7 +47,6 @@ function getNarrationIframe() {
     if (iframe) return iframe;
   }
 
-  // 2. 全 iframe のうち最後のものを取得する (キャンバス用を避けるため)
   const iframes = Array.from(document.querySelectorAll('.docs-texteventtarget-iframe'));
   if (iframes.length > 0) return iframes[iframes.length - 1];
 
@@ -57,7 +55,6 @@ function getNarrationIframe() {
 
 // 既存シーンの文字をクリアして台本を流し込む
 async function injectTextToGoogleVids(text) {
-  // 1. プレースホルダーをクリックしてエディタを活性化
   let placeholder = document.querySelector('.appsFlixScriptsSidebarWorkspacePlaceholder');
   if (placeholder) {
     placeholder.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
@@ -66,7 +63,6 @@ async function injectTextToGoogleVids(text) {
     await sleep(1000); 
   }
 
-  // 2. ナレーション用 iframe を取得
   const iframe = getNarrationIframe();
   
   if (iframe) {
@@ -79,21 +75,21 @@ async function injectTextToGoogleVids(text) {
       iframeDoc.body.focus();
       await sleep(200);
 
-      // 既存の文字を削除 (Ctrl+A & Backspace のエミュレーション)
+      // 既存の文字を削除 (Ctrl+A & Backspace)
       iframeDoc.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true }));
       iframeDoc.body.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', ctrlKey: true, bubbles: true }));
       iframeDoc.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', keyCode: 8, bubbles: true }));
       iframeDoc.body.dispatchEvent(new KeyboardEvent('keyup', { key: 8, bubbles: true }));
       await sleep(200);
 
-      // 各候補へペースト送信
+      // ペースト
       triggerPaste(iframeDoc.body, text);
       if (iframeDoc.activeElement && iframeDoc.activeElement !== iframeDoc.body) {
         triggerPaste(iframeDoc.activeElement, text);
       }
       triggerPaste(iframe, text);
 
-      // フィードバック用に一時的に枠線を光らせる
+      // フィードバック用に一時的に枠線を緑に光らせる
       const visualContainer = document.querySelector('.appsFlixScriptsSidebarWorkspace') || placeholder;
       if (visualContainer) {
         const origBorder = visualContainer.style.outline;
@@ -107,7 +103,7 @@ async function injectTextToGoogleVids(text) {
     }
   }
 
-  // フォールバック（通常要素）
+  // フォールバック
   console.log("フォールバックでの入力...");
   let targetElement = document.activeElement;
   if (!targetElement || targetElement === document.body || targetElement.tagName === 'BODY') {
@@ -126,7 +122,7 @@ async function injectTextToGoogleVids(text) {
 async function addScenesUntil(targetCount) {
   console.log(`[全自動化] 目標スライド数: ${targetCount} に向け自動生成を開始...`);
   
-  for (let attempt = 0; attempt < 15; attempt++) {
+  for (let attempt = 0; attempt < 20; attempt++) {
     const currentCount = document.querySelectorAll('rect[aria-label*="シーン"]').length;
     console.log(`現在: ${currentCount} / 目標: ${targetCount}`);
     
@@ -141,7 +137,7 @@ async function addScenesUntil(targetCount) {
       addBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
       addBtn.click();
       addBtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-      await sleep(1800); // 描画ラグを考慮
+      await sleep(2000); // 描画ラグ対策で少し長めに待機
     } else {
       console.error("新しいシーンボタンが見つかりません。");
       return false;
@@ -150,22 +146,37 @@ async function addScenesUntil(targetCount) {
   return false;
 }
 
-// 指定したシーンをアクティブに切り替える (フォーカス + Spaceキー)
+// 指定したシーンをアクティブに切り替える (フォーカス + Spaceキー、リトライ＆ロギング強化)
 async function changeScene(sceneNum) {
-  const rects = Array.from(document.querySelectorAll('rect[aria-label*="シーン"]'));
-  const targetRect = rects.find(rect => {
-    const label = rect.getAttribute('aria-label') || '';
-    const match = label.match(/シーン\s*(\d+)/);
-    return match && parseInt(match[1]) === sceneNum;
-  });
+  // DOMの更新ラグに備えて、最大3回リトライする
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const rects = Array.from(document.querySelectorAll('rect[aria-label]'));
+    const targetRect = rects.find(rect => {
+      const label = rect.getAttribute('aria-label') || '';
+      // "シーン 2", "Scene 2", "2/6" などに幅広くマッチさせる
+      const match = label.match(/(?:シーン|Scene)\s*(\d+)/i) || label.match(/^(\d+)\/\d+/);
+      const parsedNum = match ? parseInt(match[1]) : null;
+      return parsedNum === sceneNum;
+    });
 
-  if (targetRect) {
-    targetRect.focus();
-    targetRect.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', keyCode: 32, bubbles: true }));
-    targetRect.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', code: 'Space', keyCode: 32, bubbles: true }));
-    await sleep(1500); // 画面更新待機
-    return true;
+    if (targetRect) {
+      console.log(`シーン ${sceneNum} に切り替えます (aria-label: "${targetRect.getAttribute('aria-label')}")`);
+      targetRect.focus();
+      targetRect.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', keyCode: 32, bubbles: true }));
+      targetRect.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', code: 'Space', keyCode: 32, bubbles: true }));
+      await sleep(1800); // 画面更新待機
+      return true;
+    }
+    
+    console.warn(`⚠️ シーン ${sceneNum} の要素がまだ見つかりません。再試行します... (${attempt + 1}/3)`);
+    await sleep(1000); // 同期を待つ
   }
+
+  // 完全に失敗した場合、デバッグ用に現在存在するすべての rect のラベルをコンソールに出力する
+  console.error(`❌ シーン ${sceneNum} のタイムライン要素が見つかりませんでした。`);
+  const allLabels = Array.from(document.querySelectorAll('rect[aria-label]')).map(r => r.getAttribute('aria-label'));
+  console.log("現在タイムライン上に存在する rect のラベル一覧:", allLabels);
+
   return false;
 }
 
@@ -176,12 +187,19 @@ async function runAutoInjection(scenes) {
   // 1. シーンを自動で増やす
   const successAdd = await addScenesUntil(scenes.length);
   if (!successAdd) {
-    throw new Error("スライドの自動追加に失敗しました。タイムラインのボタンが隠れていないか確認してください。");
+    throw new Error("スライドの自動追加に失敗しました。");
   }
+
+  // スライド生成完了後、タイムライン全体のDOMが落ち着くまで2秒待機
+  console.log("スライド自動生成完了。DOMの安定化をお待ちください...");
+  await sleep(2000);
 
   // 2. シーン1へ一度戻す
   console.log("シーン 1 へ切り替えます...");
-  await changeScene(1);
+  const successGoToOne = await changeScene(1);
+  if (!successGoToOne) {
+    throw new Error("シーン 1 への復帰に失敗しました。");
+  }
   await sleep(1000);
 
   // 3. ループで順次流し込む
