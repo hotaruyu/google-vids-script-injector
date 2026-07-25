@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Google Vids 台本注入 (全自動シーン生成版)</title>
+  <title>Google Vids 台本自動注入くん (GitHub連携・全自動版)</title>
   <style>
     body {
       width: 350px;
@@ -27,7 +27,7 @@
       display: block;
       margin-bottom: 4px;
     }
-    select, textarea {
+    select, textarea, input[type="text"] {
       width: 100%;
       background: #1e2438;
       border: 1px solid rgba(255, 255, 255, 0.15);
@@ -69,6 +69,7 @@
       cursor: pointer;
       box-shadow: 0 4px 12px rgba(255, 71, 87, 0.3);
       transition: all 0.2s;
+      margin-bottom: 10px;
     }
     button.inject-main:hover {
       opacity: 0.9;
@@ -80,6 +81,19 @@
       text-align: center;
       min-height: 16px;
     }
+    .github-input-group {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .github-input-group input {
+      margin-bottom: 0;
+      flex: 2;
+    }
+    .github-input-group select {
+      margin-bottom: 0;
+      flex: 1;
+    }
   </style>
 </head>
 <body>
@@ -87,13 +101,34 @@
 
   <label for="script-preset">📜 モード選択:</label>
   <select id="script-preset">
-    <option value="ep4">昭和AI ep4: パソコン登場時と同じ現象 (手動選択)</option>
-    <option value="ep3">昭和AI ep3: AI導入と生産性のJカーブ (手動選択)</option>
-    <option value="custom">✍️ カスタム台本を入力して全自動で流し込む</option>
+    <option value="github">🌐 GitHubから台本を読み込んで全自動流し込み</option>
+    <option value="custom">✍️ テキストを直接コピペして全自動流し込み</option>
+    <option value="ep4">昭和AI ep4: パソコン登場時と同じ現象 (手動・1シーンずつ)</option>
+    <option value="ep3">昭和AI ep3: AI導入と生産性のJカーブ (手動・1シーンずつ)</option>
   </select>
 
-  <!-- プリセット用コントロールエリア -->
-  <div id="preset-controls-area">
+  <!-- 1. GitHub連携エリア (初期表示) -->
+  <div id="github-controls-area">
+    <label for="github-filename">📂 GitHub上の台本ファイル名（docs/ 内）:</label>
+    <div class="github-input-group">
+      <input type="text" id="github-filename" placeholder="例: showa_ai_ep4_script" value="台本_昭和AI_ep4_パソコン登場時と同じ現象">
+      <select id="github-file-ext">
+        <option value=".md">.md</option>
+        <option value=".txt">.txt</option>
+      </select>
+    </div>
+    <button class="inject-main" id="github-inject-btn" style="background: linear-gradient(135deg, #1e90ff 0%, #a020f0 100%); box-shadow: 0 4px 12px rgba(30, 144, 255, 0.3);">⚡ GitHubから取得して全自動流し込み！</button>
+  </div>
+
+  <!-- 2. カスタム台本コピペエリア (初期は非表示) -->
+  <div id="custom-controls-area" style="display: none;">
+    <label for="custom-script-text">✍️ 台本テキスト（コピペ用）:</label>
+    <textarea id="custom-script-text" style="height: 160px;" placeholder="【シーン1】冒頭のタイトル&#10;ここにナレーションの本文を記述します。[pause 1.5s]&#10;&#10;【シーン2】次のシーン&#10;ここに次のナレーションを記述します。[pause 2.0s]"></textarea>
+    <button class="inject-main" id="auto-inject-btn" style="background: linear-gradient(135deg, #2ed573 0%, #1e90ff 100%); box-shadow: 0 4px 12px rgba(46, 213, 115, 0.3);">⚡ Google Vidsへ全自動流し込み！</button>
+  </div>
+
+  <!-- 3. プリセット手動エリア (初期は非表示) -->
+  <div id="preset-controls-area" style="display: none;">
     <label for="scene-select">🎬 シーン（場面）を選択:</label>
     <select id="scene-select">
       <!-- JSで挿入 -->
@@ -108,14 +143,6 @@
     <textarea id="script-text"></textarea>
 
     <button class="inject-main" id="inject-btn">⚡ このシーンの台本を流し込む！</button>
-  </div>
-
-  <!-- カスタム台本全自動エリア (初期は非表示) -->
-  <div id="custom-controls-area" style="display: none;">
-    <label for="custom-script-text">✍️ 台本テキスト（コピペ用）:</label>
-    <textarea id="custom-script-text" style="height: 160px;" placeholder="【シーン1】冒頭のタイトル&#10;ここにナレーションの本文を記述します。[pause 1.5s]&#10;&#10;【シーン2】次のシーン&#10;ここに次のナレーションを記述します。[pause 2.0s]"></textarea>
-    
-    <button class="inject-main" id="auto-inject-btn" style="background: linear-gradient(135deg, #2ed573 0%, #1e90ff 100%); box-shadow: 0 4px 12px rgba(46, 213, 115, 0.3);">⚡ Google Vidsへ全自動流し込み！</button>
   </div>
 
   <div class="status" id="status-msg"></div>
