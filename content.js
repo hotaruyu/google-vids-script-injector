@@ -1,4 +1,4 @@
-// Content script injected into Google Vids pages (V3.10 - 切り替えリトライ＆デバッグ機能強化版)
+// Content script injected into Google Vids pages (V3.11 - 同期安定化＆矢印キー相対移動フォールバック版)
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "inject_script") {
@@ -21,6 +21,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// キーイベント送信ヘルパー
+function sendKeyEvent(element, key, code, keyCode) {
+  element.dispatchEvent(new KeyboardEvent('keydown', { key: key, code: code, keyCode: keyCode, bubbles: true }));
+  element.dispatchEvent(new KeyboardEvent('keyup', { key: key, code: code, keyCode: keyCode, bubbles: true }));
+}
 
 // ペーストイベントの送信
 function triggerPaste(targetElement, text) {
@@ -122,7 +128,7 @@ async function injectTextToGoogleVids(text) {
 async function addScenesUntil(targetCount) {
   console.log(`[全自動化] 目標スライド数: ${targetCount} に向け自動生成を開始...`);
   
-  for (let attempt = 0; attempt < 20; attempt++) {
+  for (let attempt = 0; attempt < 30; attempt++) {
     const currentCount = document.querySelectorAll('rect[aria-label*="シーン"]').length;
     console.log(`現在: ${currentCount} / 目標: ${targetCount}`);
     
@@ -137,7 +143,9 @@ async function addScenesUntil(targetCount) {
       addBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
       addBtn.click();
       addBtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-      await sleep(2000); // 描画ラグ対策で少し長めに待機
+      
+      // Google Docs同期エンジンの負荷と競合を防ぐため、追加の待機時間を2.5秒に延長
+      await sleep(2500); 
     } else {
       console.error("新しいシーンボタンが見つかりません。");
       return false;
@@ -146,37 +154,80 @@ async function addScenesUntil(targetCount) {
   return false;
 }
 
-// 指定したシーンをアクティブに切り替える (フォーカス + Spaceキー、リトライ＆ロギング強化)
+// 指定したシーンをアクティブに切り替える (フォーカス + Spaceキー、矢印キー相対移動フォールバック付き)
 async function changeScene(sceneNum) {
-  // DOMの更新ラグに備えて、最大3回リトライする
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const rects = Array.from(document.querySelectorAll('rect[aria-label]'));
-    const targetRect = rects.find(rect => {
-      const label = rect.getAttribute('aria-label') || '';
-      // "シーン 2", "Scene 2", "2/6" などに幅広くマッチさせる
-      const match = label.match(/(?:シーン|Scene)\s*(\d+)/i) || label.match(/^(\d+)\/\d+/);
-      const parsedNum = match ? parseInt(match[1]) : null;
-      return parsedNum === sceneNum;
-    });
-
-    if (targetRect) {
-      console.log(`シーン ${sceneNum} に切り替えます (aria-label: "${targetRect.getAttribute('aria-label')}")`);
-      targetRect.focus();
-      targetRect.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', keyCode: 32, bubbles: true }));
-      targetRect.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', code: 'Space', keyCode: 32, bubbles: true }));
-      await sleep(1800); // 画面更新待機
-      return true;
+  const rects = Array.from(document.querySelectorAll('rect[aria-label]'));
+  
+  // 現在アクティブな（選択されている）シーンを特定する
+  // 例: aria-label="シーン 1/12" や "Scene 1/12"
+  let activeSceneNum = null;
+  let activeRect = null;
+  
+  rects.forEach(rect => {
+    const label = rect.getAttribute('aria-label') || '';
+    const match = label.match(/(?:シーン|Scene)\s*(\d+)\/\d+/);
+    if (match) {
+      activeSceneNum = parseInt(match[1]);
+      activeRect = rect;
     }
-    
-    console.warn(`⚠️ シーン ${sceneNum} の要素がまだ見つかりません。再試行します... (${attempt + 1}/3)`);
-    await sleep(1000); // 同期を待つ
+  });
+
+  console.log(`[changeScene] 現在のアクティブシーン番号: ${activeSceneNum}`);
+
+  // 1. 直接ターゲットの rect が見つかるかチェック
+  const targetRect = rects.find(rect => {
+    const label = rect.getAttribute('aria-label') || '';
+    const match = label.match(/(?:シーン|Scene)\s*(\d+)/i) || label.match(/^(\d+)\/\d+/);
+    const parsedNum = match ? parseInt(match[1]) : null;
+    return parsedNum === sceneNum;
+  });
+
+  if (targetRect) {
+    console.log(`直接切り替え: シーン ${sceneNum} に切り替えます (aria-label: "${targetRect.getAttribute('aria-label')}")`);
+    targetRect.focus();
+    sendKeyEvent(targetRect, ' ', 'Space', 32);
+    await sleep(1800);
+    return true;
   }
 
-  // 完全に失敗した場合、デバッグ用に現在存在するすべての rect のラベルをコンソールに出力する
-  console.error(`❌ シーン ${sceneNum} のタイムライン要素が見つかりませんでした。`);
+  // 2. 直接見つからず、現在のアクティブな rect がある場合（仮想DOMによる動的アンマウント対策）
+  // 画面上にターゲットがなくても、現在のアクティブ要素から「矢印キー」で辿ることでブラウザが自動的に描画してフォーカスを移します
+  if (activeRect && activeSceneNum !== null) {
+    console.log(`⚠️ 直接シーン ${sceneNum} が見つからないため、矢印キー相対移動フォールバックを実行します。`);
+    activeRect.focus();
+    await sleep(200);
+
+    const diff = sceneNum - activeSceneNum;
+    const key = diff > 0 ? 'ArrowRight' : 'ArrowLeft';
+    const code = diff > 0 ? 'ArrowRight' : 'ArrowLeft';
+    const keyCode = diff > 0 ? 39 : 37;
+    const steps = Math.abs(diff);
+
+    console.log(`フォーカスを ${key} に ${steps} 回移動します。`);
+    let currentFocus = activeRect;
+    
+    for (let s = 0; s < steps; s++) {
+      sendKeyEvent(document.activeElement || currentFocus, key, code, keyCode);
+      await sleep(400); // アニメーション・ロードを待つために少し長めの待機
+    }
+
+    const finalActive = document.activeElement;
+    if (finalActive) {
+      console.log(`移動先の要素を決定します (aria-label: "${finalActive.getAttribute('aria-label')}")`);
+      sendKeyEvent(finalActive, ' ', 'Space', 32);
+      await sleep(2000);
+      return true;
+    } else {
+      sendKeyEvent(currentFocus, ' ', 'Space', 32);
+      await sleep(2000);
+      return true;
+    }
+  }
+
+  // 3. どちらもダメな場合の最終手段
+  console.error(`❌ シーン ${sceneNum} の切り替えに完全に失敗しました。`);
   const allLabels = Array.from(document.querySelectorAll('rect[aria-label]')).map(r => r.getAttribute('aria-label'));
   console.log("現在タイムライン上に存在する rect のラベル一覧:", allLabels);
-
   return false;
 }
 
@@ -190,9 +241,9 @@ async function runAutoInjection(scenes) {
     throw new Error("スライドの自動追加に失敗しました。");
   }
 
-  // スライド生成完了後、タイムライン全体のDOMが落ち着くまで2秒待機
-  console.log("スライド自動生成完了。DOMの安定化をお待ちください...");
-  await sleep(2000);
+  // スライド生成完了後、Google Docsのクラウド保存同期が落ち着くまで5秒間待機（巻き戻しバグ対策）
+  console.log("スライド自動生成完了。サーバー同期の安定化をお待ちください (5秒)...");
+  await sleep(5000);
 
   // 2. シーン1へ一度戻す
   console.log("シーン 1 へ切り替えます...");
