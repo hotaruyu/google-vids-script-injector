@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Google Vids 台本自動注入くん (Showa AI)",
-  "version": "1.0.0",
-  "description": "YouTube AIチームが生成した台本をワンクリックでGoogle Vidsのスクリプト欄に流し込みます。",
+  "name": "Google Vids 台本自動注入くん",
+  "version": "1.0.1",
+  "description": "AIが生成した台本をワンクリックでGoogle Vidsのスクリプト欄に流し込みます。",
   "permissions": [
     "activeTab",
     "scripting"
@@ -22,7 +22,8 @@
     {
       "matches": [
         "https://docs.google.com/vids/*",
-        "https://vids.google.com/*"
+        "https://vids.google.com/*",
+        "https://docs.google.com/*"
       ],
       "js": ["content.js"]
     }
