@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Google Vids 台本注入 (全自動シーン生成版)</title>
+  <style>
+    body {
+      width: 350px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #0f111a;
+      color: #f1f2f6;
+      margin: 0;
+      padding: 16px;
+    }
+    h2 {
+      font-size: 15px;
+      margin-top: 0;
+      margin-bottom: 12px;
+      color: #ff4757;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    label {
+      font-size: 11px;
+      color: #a4b0be;
+      display: block;
+      margin-bottom: 4px;
+    }
+    select, textarea {
+      width: 100%;
+      background: #1e2438;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 6px;
+      color: white;
+      padding: 6px 8px;
+      font-size: 12px;
+      box-sizing: border-box;
+      margin-bottom: 10px;
+    }
+    .step-controls {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .step-btn {
+      flex: 1;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: white;
+      padding: 6px;
+      border-radius: 6px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    textarea {
+      height: 90px;
+      resize: vertical;
+    }
+    button.inject-main {
+      width: 100%;
+      background: linear-gradient(135deg, #ff4757 0%, #ffa502 100%);
+      border: none;
+      color: white;
+      padding: 10px;
+      border-radius: 8px;
+      font-weight: bold;
+      font-size: 13px;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(255, 71, 87, 0.3);
+      transition: all 0.2s;
+    }
+    button.inject-main:hover {
+      opacity: 0.9;
+    }
+    .status {
+      font-size: 11px;
+      color: #2ed573;
+      margin-top: 8px;
+      text-align: center;
+      min-height: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h2>🎬 Google Vids 台本自動注入くん</h2>
+
+  <label for="script-preset">📜 モード選択:</label>
+  <select id="script-preset">
+    <option value="ep4">昭和AI ep4: パソコン登場時と同じ現象 (手動選択)</option>
+    <option value="ep3">昭和AI ep3: AI導入と生産性のJカーブ (手動選択)</option>
+    <option value="custom">✍️ カスタム台本を入力して全自動で流し込む</option>
+  </select>
+
+  <!-- プリセット用コントロールエリア -->
+  <div id="preset-controls-area">
+    <label for="scene-select">🎬 シーン（場面）を選択:</label>
+    <select id="scene-select">
+      <!-- JSで挿入 -->
+    </select>
+
+    <div class="step-controls">
+      <button class="step-btn" id="prev-scene-btn">◀ 前のシーン</button>
+      <button class="step-btn" id="next-scene-btn">次のシーン ▶</button>
+    </div>
+
+    <label for="script-text">📝 選択中のシーン台本:</label>
+    <textarea id="script-text"></textarea>
+
+    <button class="inject-main" id="inject-btn">⚡ このシーンの台本を流し込む！</button>
+  </div>
+
+  <!-- カスタム台本全自動エリア (初期は非表示) -->
+  <div id="custom-controls-area" style="display: none;">
+    <label for="custom-script-text">✍️ 台本テキスト（コピペ用）:</label>
+    <textarea id="custom-script-text" style="height: 160px;" placeholder="【シーン1】冒頭のタイトル&#10;ここにナレーションの本文を記述します。[pause 1.5s]&#10;&#10;【シーン2】次のシーン&#10;ここに次のナレーションを記述します。[pause 2.0s]"></textarea>
+    
+    <button class="inject-main" id="auto-inject-btn" style="background: linear-gradient(135deg, #2ed573 0%, #1e90ff 100%); box-shadow: 0 4px 12px rgba(46, 213, 115, 0.3);">⚡ Google Vidsへ全自動流し込み！</button>
+  </div>
+
+  <div class="status" id="status-msg"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
